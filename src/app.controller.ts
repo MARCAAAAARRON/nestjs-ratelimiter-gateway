@@ -7,6 +7,6 @@ export class AppController {
 
   @Get()
   getHello(): string {
-    return this.appService.getHello();
+    return 'NestJS Rate Limiter Gateway — try: GET /gateway/ping with an x-api-key header';
   }
 }
