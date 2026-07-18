@@ -20,18 +20,17 @@ This project builds a rate limiter that answers all three, in front of a real (i
 ## Architecture
 
 ```
-                           ┌────────────────────────────┐
-Incoming Request ───────►  │   NestJS Gateway           │
-(x-api-key header)         │                            │
-                           │  1. RatelimiterGuard       │
-                           │     - extract API key      │
-                           │     - check Redis (atomic) │◄──► Redis
-                           │     - allow or 429         │      (count:*, config:*,
-                           │                            |       bucket:* keys)
-                           │  2. If allowed, proxy      |
-                           |     request                │
-                           │     via HttpService        │
-                           └──────────────┬─────────────┘
+                           ┌───────────────────────────────┐
+Incoming Request ───────►  │   NestJS Gateway              │
+(x-api-key header)         │                               │
+                           │  1. RatelimiterGuard          │
+                           │     - extract API key         │
+                           │     - check Redis (atomic)    │◄──► Redis
+                           │     - allow or 429            │      (count:*, config:*,
+                           │                               │       bucket:* keys)
+                           │  2. If allowed, proxy request │
+                           │     via HttpService           │
+                           └──────────────┬────────────────┘
                                           │
                                           ▼
                                  Backend Service
@@ -99,6 +98,19 @@ npm test
 ```
 
 Unit tests cover the core rate-limiting logic (fixed window allow/reject, per-key config overrides, retry-after TTL conversion) with a mocked Redis client, so they run without any external dependencies.
+
+## Load testing
+
+Tested against the live Railway deployment using [autocannon](https://github.com/mcollina/autocannon) at 50 concurrent connections for 10 seconds, against a single API key (`RATE_LIMIT_MAX_REQUESTS=5`):
+
+| Algorithm | 2xx | Rejected (429) | Avg req/sec | p50 latency | p99 latency |
+|---|---|---|---|---|---|
+| Fixed window | 5 | 1,262 | 126.7 | 333 ms | 2,036 ms |
+| Token bucket | 5 | 1,285 | 129.0 | 332 ms | 2,048 ms |
+
+**What this shows:** under heavy concurrent load, exactly 5 requests succeeded and every single request past that was correctly rejected — zero over-limit requests slipped through, for either algorithm. That's the practical payoff of the atomic Lua script: the naive two-call `INCR`+`EXPIRE` approach has a real race-condition window under exactly this kind of concurrent burst, and this test is effectively a stress test of that fix.
+
+Both algorithms show near-identical results here because the test window (10s) is short relative to the token bucket's refill rate at this configuration (~0.083 tokens/sec) — not enough time for a meaningful number of tokens to refill mid-test. A longer test with request pacing (rather than a pure concurrent burst) would be needed to show token bucket's actual advantage: smoother admission near window boundaries instead of fixed window's hard reset.
 
 ## Observability
 
