@@ -25,6 +25,7 @@
     "@nestjs/config": "^4.0.4",
     "@nestjs/core": "^11.0.1",
     "@nestjs/platform-express": "^11.0.1",
+    "@nestjs/serve-static": "^5.0.5",
     "@willsoto/nestjs-prometheus": "^6.1.0",
     "axios": "^1.18.1",
     "class-transformer": "^0.5.1",

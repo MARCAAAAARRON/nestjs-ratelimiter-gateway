@@ -1,0 +1,782 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NestJS Distributed Rate Limiter &amp; API Gateway</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:            #0A0A0A;
+    --bg-elevated:   #111113;
+    --bg-card:       #131315;
+    --border:        #232326;
+    --border-hover:  #3a2226;
+    --accent:        #FF1744;
+    --accent-2:      #FF0033;
+    --accent-glow:   rgba(255, 23, 68, 0.35);
+    --accent-glow-soft: rgba(255, 23, 68, 0.12);
+    --text:          #FFFFFF;
+    --text-muted:    #A1A1AA;
+    --text-dim:      #6b6b70;
+    --success:       #2ee6a6;
+    --success-glow:  rgba(46, 230, 166, 0.25);
+
+    --font-display: 'Space Grotesk', system-ui, sans-serif;
+    --font-body:    'Inter', system-ui, sans-serif;
+    --font-mono:    'JetBrains Mono', 'SF Mono', Consolas, monospace;
+
+    --radius: 10px;
+    --max-w: 1120px;
+  }
+
+  *{ box-sizing:border-box; margin:0; padding:0; }
+
+  html{ scroll-behavior:smooth; }
+
+  body{
+    background:var(--bg);
+    color:var(--text);
+    font-family:var(--font-body);
+    line-height:1.55;
+    -webkit-font-smoothing:antialiased;
+    overflow-x:hidden;
+  }
+
+  /* subtle ambient grid backdrop */
+  body::before{
+    content:"";
+    position:fixed; inset:0;
+    background-image:
+      linear-gradient(rgba(255,23,68,0.035) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,23,68,0.035) 1px, transparent 1px);
+    background-size: 48px 48px;
+    mask-image: radial-gradient(ellipse 80% 50% at 50% 0%, black 40%, transparent 75%);
+    pointer-events:none;
+    z-index:0;
+  }
+
+  a{ color:inherit; text-decoration:none; }
+
+  :focus-visible{
+    outline:2px solid var(--accent);
+    outline-offset:3px;
+  }
+
+  .wrap{ max-width:var(--max-w); margin:0 auto; padding:0 24px; position:relative; z-index:1; }
+
+  code, .mono{ font-family:var(--font-mono); }
+
+  /* ---------- NAV ---------- */
+  nav{
+    position:sticky; top:0; z-index:50;
+    background:rgba(10,10,10,0.82);
+    backdrop-filter:blur(10px);
+    border-bottom:1px solid var(--border);
+  }
+  nav .wrap{
+    display:flex; align-items:center; justify-content:space-between;
+    height:64px;
+  }
+  .brand{
+    font-family:var(--font-mono);
+    font-weight:600;
+    font-size:14px;
+    letter-spacing:0.02em;
+    display:flex; align-items:center; gap:8px;
+  }
+  .brand .dot{
+    width:8px; height:8px; border-radius:50%;
+    background:var(--accent);
+    box-shadow:0 0 10px var(--accent-glow), 0 0 2px var(--accent);
+    animation:pulse 2.4s ease-in-out infinite;
+  }
+  @keyframes pulse{ 0%,100%{opacity:1;} 50%{opacity:0.35;} }
+
+  .nav-links{ display:flex; gap:28px; align-items:center; }
+  .nav-links a{
+    font-family:var(--font-mono);
+    font-size:13px;
+    color:var(--text-muted);
+    transition:color .15s ease;
+  }
+  .nav-links a:hover{ color:var(--text); }
+  .nav-cta{
+    font-family:var(--font-mono);
+    font-size:13px;
+    padding:8px 16px;
+    border:1px solid var(--accent);
+    border-radius:6px;
+    color:var(--text) !important;
+    transition:all .15s ease;
+  }
+  .nav-cta:hover{ background:var(--accent); box-shadow:0 0 20px var(--accent-glow); }
+
+  @media (max-width:760px){ .nav-links a:not(.nav-cta){ display:none; } }
+
+  /* ---------- SECTION SHELL ---------- */
+  section{ position:relative; z-index:1; }
+  .section-pad{ padding:96px 0; }
+  @media (max-width:760px){ .section-pad{ padding:64px 0; } }
+
+  .eyebrow{
+    font-family:var(--font-mono);
+    font-size:12px;
+    letter-spacing:0.14em;
+    color:var(--accent);
+    text-transform:uppercase;
+    display:flex; align-items:center; gap:10px;
+    margin-bottom:18px;
+  }
+  .eyebrow::before{
+    content:"//";
+    color:var(--text-dim);
+  }
+
+  h1,h2,h3{ font-family:var(--font-display); letter-spacing:-0.01em; }
+
+  .section-title{
+    font-size:clamp(28px, 4vw, 40px);
+    font-weight:600;
+    margin-bottom:14px;
+    max-width:640px;
+  }
+  .section-desc{
+    color:var(--text-muted);
+    max-width:560px;
+    font-size:16px;
+  }
+
+  /* ---------- HERO ---------- */
+  .hero{ padding:88px 0 80px; }
+  .hero-grid{
+    display:grid;
+    grid-template-columns:1fr;
+    gap:48px;
+  }
+  .hero h1{
+    font-size:clamp(34px, 5.4vw, 58px);
+    line-height:1.06;
+    font-weight:700;
+    max-width:760px;
+  }
+  .hero h1 .hl{
+    color:var(--accent);
+    text-shadow:0 0 24px var(--accent-glow);
+  }
+  .hero-sub{
+    margin-top:22px;
+    font-size:17px;
+    color:var(--text-muted);
+    max-width:580px;
+    line-height:1.65;
+  }
+  .hero-sub code{
+    background:var(--bg-elevated);
+    border:1px solid var(--border);
+    padding:1px 6px;
+    border-radius:4px;
+    font-size:14px;
+    color:var(--text);
+  }
+
+  .cta-row{ display:flex; flex-wrap:wrap; gap:12px; margin-top:32px; }
+  .btn{
+    font-family:var(--font-mono);
+    font-size:13.5px;
+    font-weight:500;
+    padding:12px 20px;
+    border-radius:7px;
+    border:1px solid var(--border);
+    display:inline-flex; align-items:center; gap:8px;
+    transition:all .18s ease;
+    cursor:pointer;
+    background:transparent;
+    color:var(--text);
+  }
+  .btn-primary{
+    background:var(--accent);
+    border-color:var(--accent);
+  }
+  .btn-primary:hover{
+    box-shadow:0 0 28px var(--accent-glow);
+    transform:translateY(-1px);
+  }
+  .btn-ghost:hover{
+    border-color:var(--border-hover);
+    background:var(--accent-glow-soft);
+    box-shadow:0 0 20px var(--accent-glow-soft);
+  }
+  .btn-ghost.copied{ border-color:var(--success); color:var(--success); }
+
+  /* terminal */
+  .terminal{
+    background:var(--bg-elevated);
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+    overflow:hidden;
+    box-shadow:0 0 0 1px rgba(255,255,255,0.02), 0 30px 60px -20px rgba(255,23,68,0.08);
+  }
+  .terminal-bar{
+    display:flex; align-items:center; gap:8px;
+    padding:11px 14px;
+    background:#0d0d0f;
+    border-bottom:1px solid var(--border);
+  }
+  .terminal-bar .tdot{ width:10px; height:10px; border-radius:50%; background:#2a2a2d; }
+  .terminal-bar .tlabel{
+    margin-left:8px;
+    font-family:var(--font-mono);
+    font-size:11.5px;
+    color:var(--text-dim);
+  }
+  .terminal-body{
+    padding:22px 20px 26px;
+    font-family:var(--font-mono);
+    font-size:13.5px;
+    min-height:230px;
+  }
+  .terminal-line{ display:flex; gap:8px; flex-wrap:wrap; margin-bottom:4px; }
+  .prompt{ color:var(--accent); flex-shrink:0; }
+  .cmd{ color:var(--text); }
+  .out-dim{ color:var(--text-dim); }
+  .out-muted{ color:var(--text-muted); }
+  .status-200{ color:var(--success); font-weight:600; }
+  .status-429{ color:var(--accent); font-weight:600; }
+  .cursor{
+    display:inline-block; width:7px; height:15px;
+    background:var(--accent);
+    margin-left:2px;
+    animation:blink 1s step-end infinite;
+    vertical-align:middle;
+  }
+  @keyframes blink{ 50%{ opacity:0; } }
+  .term-block{ display:none; }
+  .term-block.active{ display:block; animation:fadeIn .35s ease; }
+  @keyframes fadeIn{ from{opacity:0; transform:translateY(3px);} to{opacity:1; transform:translateY(0);} }
+
+  /* ---------- ARCHITECTURE CARDS ---------- */
+  .card-grid{
+    display:grid;
+    grid-template-columns:repeat(2, 1fr);
+    gap:16px;
+    margin-top:44px;
+  }
+  @media (max-width:760px){ .card-grid{ grid-template-columns:1fr; } }
+
+  .arch-card{
+    background:var(--bg-card);
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+    padding:26px 24px;
+    transition:border-color .2s ease, box-shadow .2s ease, transform .2s ease;
+  }
+  .arch-card:hover{
+    border-color:var(--border-hover);
+    box-shadow:0 0 30px -8px var(--accent-glow-soft);
+    transform:translateY(-2px);
+  }
+  .arch-card .tag{
+    font-family:var(--font-mono);
+    font-size:11px;
+    color:var(--accent);
+    letter-spacing:0.08em;
+    margin-bottom:12px;
+    display:block;
+  }
+  .arch-card h3{
+    font-size:18px;
+    font-weight:600;
+    margin-bottom:10px;
+  }
+  .arch-card p{
+    color:var(--text-muted);
+    font-size:14.5px;
+    line-height:1.6;
+  }
+  .arch-card .snippet{
+    margin-top:16px;
+    background:var(--bg-elevated);
+    border:1px solid var(--border);
+    border-radius:6px;
+    padding:12px 14px;
+    font-family:var(--font-mono);
+    font-size:12.5px;
+    color:var(--text-muted);
+    overflow-x:auto;
+    white-space:pre;
+  }
+  .arch-card .snippet .k{ color:var(--accent); }
+  .arch-card .snippet .s{ color:var(--success); }
+
+  /* flow diagram */
+  .flow{
+    margin-top:56px;
+    padding:28px 24px;
+    background:var(--bg-card);
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+    overflow-x:auto;
+  }
+  .flow-row{
+    display:flex; align-items:center; gap:10px;
+    font-family:var(--font-mono);
+    font-size:13px;
+    min-width:640px;
+  }
+  .flow-node{
+    padding:12px 16px;
+    border:1px solid var(--border);
+    border-radius:7px;
+    background:var(--bg-elevated);
+    white-space:nowrap;
+    text-align:center;
+  }
+  .flow-node.hot{ border-color:var(--accent); box-shadow:0 0 18px var(--accent-glow-soft); }
+  .flow-arrow{ color:var(--text-dim); flex-shrink:0; }
+  .flow-caption{
+    font-family:var(--font-mono);
+    font-size:11.5px;
+    color:var(--text-dim);
+    text-align:center;
+    margin-top:8px;
+  }
+
+  /* ---------- LOAD TEST ---------- */
+  .bench-wrap{
+    margin-top:40px;
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+    overflow:hidden;
+    background:var(--bg-card);
+  }
+  table.bench{
+    width:100%;
+    border-collapse:collapse;
+    font-family:var(--font-mono);
+    font-size:13px;
+  }
+  table.bench th{
+    text-align:left;
+    padding:14px 18px;
+    color:var(--text-dim);
+    font-weight:500;
+    font-size:11px;
+    letter-spacing:0.06em;
+    text-transform:uppercase;
+    border-bottom:1px solid var(--border);
+    background:var(--bg-elevated);
+  }
+  table.bench td{
+    padding:16px 18px;
+    border-bottom:1px solid var(--border);
+    color:var(--text-muted);
+  }
+  table.bench tr:last-child td{ border-bottom:none; }
+  table.bench td.algo{ color:var(--text); font-weight:600; }
+  table.bench td.ok{ color:var(--success); }
+  table.bench td.rej{ color:var(--accent); }
+  .bench-scroll{ overflow-x:auto; }
+
+  .takeaway{
+    margin-top:20px;
+    padding:18px 20px;
+    border:1px solid var(--accent);
+    border-radius:var(--radius);
+    background:var(--accent-glow-soft);
+    font-family:var(--font-mono);
+    font-size:13.5px;
+    color:var(--text);
+    display:flex; gap:12px;
+  }
+  .takeaway .marker{ color:var(--accent); flex-shrink:0; }
+
+  /* ---------- CURL TESTER ---------- */
+  .cmd-block{
+    background:var(--bg-card);
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+    margin-bottom:16px;
+    overflow:hidden;
+  }
+  .cmd-head{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:12px 18px;
+    border-bottom:1px solid var(--border);
+    background:var(--bg-elevated);
+  }
+  .cmd-head .label{
+    font-family:var(--font-mono);
+    font-size:12.5px;
+    color:var(--text-muted);
+  }
+  .copy-btn{
+    font-family:var(--font-mono);
+    font-size:11.5px;
+    color:var(--text-dim);
+    border:1px solid var(--border);
+    background:transparent;
+    padding:5px 11px;
+    border-radius:5px;
+    cursor:pointer;
+    transition:all .15s ease;
+  }
+  .copy-btn:hover{ color:var(--text); border-color:var(--border-hover); }
+  .copy-btn.copied{ color:var(--success); border-color:var(--success); }
+  .cmd-body{
+    padding:16px 18px;
+    font-family:var(--font-mono);
+    font-size:13px;
+    color:var(--text);
+    overflow-x:auto;
+    white-space:pre;
+    line-height:1.7;
+  }
+  .cmd-body .flag{ color:var(--accent); }
+  .cmd-body .str{ color:var(--success); }
+  .cmd-body .url{ color:var(--text-muted); }
+
+  /* ---------- FOOTER ---------- */
+  footer{
+    border-top:1px solid var(--border);
+    padding:56px 0 40px;
+  }
+  .footer-grid{
+    display:grid;
+    grid-template-columns:1.4fr 1fr 1fr;
+    gap:40px;
+  }
+  @media (max-width:760px){ .footer-grid{ grid-template-columns:1fr; gap:28px; } }
+  footer h4{
+    font-family:var(--font-mono);
+    font-size:12px;
+    color:var(--text-dim);
+    letter-spacing:0.08em;
+    text-transform:uppercase;
+    margin-bottom:16px;
+  }
+  footer ul{ list-style:none; display:flex; flex-direction:column; gap:11px; }
+  footer a{
+    font-size:14px;
+    color:var(--text-muted);
+    transition:color .15s ease;
+  }
+  footer a:hover{ color:var(--accent); }
+  .footer-bottom{
+    margin-top:48px;
+    padding-top:24px;
+    border-top:1px solid var(--border);
+    display:flex; justify-content:space-between; flex-wrap:wrap; gap:12px;
+    font-family:var(--font-mono);
+    font-size:12px;
+    color:var(--text-dim);
+  }
+
+  @media (prefers-reduced-motion: reduce){
+    *{ animation-duration:0.01ms !important; animation-iteration-count:1 !important; transition-duration:0.01ms !important; }
+  }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="wrap">
+    <div class="brand"><span class="dot"></span>RATE//LIMITER</div>
+    <div class="nav-links">
+      <a href="#architecture">Architecture</a>
+      <a href="#benchmarks">Benchmarks</a>
+      <a href="#try-it">Try it</a>
+      <a href="https://github.com/MARCAAAAARRON/nestjs-ratelimiter-gateway" class="nav-cta">GitHub →</a>
+    </div>
+  </div>
+</nav>
+
+<!-- ================= HERO ================= -->
+<section class="hero">
+  <div class="wrap hero-grid">
+    <div>
+      <div class="eyebrow">NESTJS · REDIS · LUA · DISTRIBUTED SYSTEMS</div>
+      <h1>Five requests in.<br><span class="hl">Zero</span> leaked through.</h1>
+      <p class="hero-sub">
+        A rate-limiting API gateway that stays correct under concurrency — not just under a single-threaded demo.
+        Every allow/reject decision runs as one atomic <code>EVAL</code> against Redis, so horizontally-scaled
+        instances can never let a client slip past its limit, even under a 50-connection burst.
+      </p>
+      <div class="cta-row">
+        <a class="btn btn-primary" href="https://nestjs-ratelimiter-gateway-production.up.railway.app/gateway/ping" target="_blank" rel="noopener">▶ Live Railway Demo</a>
+        <a class="btn btn-ghost" href="https://github.com/MARCAAAAARRON/nestjs-ratelimiter-gateway" target="_blank" rel="noopener">GitHub Repository</a>
+        <button class="btn btn-ghost" id="heroCurlBtn" type="button">Copy cURL Test</button>
+      </div>
+    </div>
+
+    <div class="terminal" aria-label="Simulated terminal demonstrating rate limiter responses">
+      <div class="terminal-bar">
+        <span class="tdot"></span><span class="tdot"></span><span class="tdot"></span>
+        <span class="tlabel">gateway-demo.sh</span>
+      </div>
+      <div class="terminal-body">
+
+        <div class="term-block active" data-block="0">
+          <div class="terminal-line"><span class="prompt">$</span><span class="cmd">curl -i -H "x-api-key: demo" \</span></div>
+          <div class="terminal-line" style="margin-left:14px"><span class="cmd">https://…/gateway/ping</span></div>
+          <div class="terminal-line" style="margin-top:14px"><span class="status-200">HTTP/2 200 OK</span></div>
+          <div class="terminal-line out-dim">x-ratelimit-algorithm: fixed-window</div>
+          <div class="terminal-line out-dim">x-ratelimit-remaining: 4</div>
+          <div class="terminal-line out-muted">{"status":"ok"}</div>
+        </div>
+
+        <div class="term-block" data-block="1">
+          <div class="terminal-line"><span class="prompt">$</span><span class="cmd">for i in {1..6}; do curl -s -i \</span></div>
+          <div class="terminal-line" style="margin-left:14px"><span class="cmd">-H "x-api-key: demo" …/gateway/ping; done</span></div>
+          <div class="terminal-line" style="margin-top:14px"><span class="status-200">200</span><span class="out-dim"> · </span><span class="status-200">200</span><span class="out-dim"> · </span><span class="status-200">200</span><span class="out-dim"> · </span><span class="status-200">200</span><span class="out-dim"> · </span><span class="status-200">200</span></div>
+          <div class="terminal-line"><span class="status-429">HTTP/2 429 Too Many Requests</span></div>
+          <div class="terminal-line out-dim">retry-after: 47</div>
+          <div class="terminal-line out-muted">{"message":"Rate Limit Exceeded","retryAfterSeconds":47}</div>
+        </div>
+
+        <div class="term-block" data-block="2">
+          <div class="terminal-line"><span class="prompt">$</span><span class="cmd">curl -i -H "x-api-key: demo" \</span></div>
+          <div class="terminal-line" style="margin-left:14px"><span class="cmd">-H "x-algorithm: token-bucket" …/gateway/ping</span></div>
+          <div class="terminal-line" style="margin-top:14px"><span class="status-200">HTTP/2 200 OK</span></div>
+          <div class="terminal-line out-dim">x-ratelimit-algorithm: token-bucket</div>
+          <div class="terminal-line out-muted">{"status":"ok"}</div>
+          <div class="terminal-line" style="margin-top:10px"><span class="prompt">$</span><span class="cursor"></span></div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= ARCHITECTURE ================= -->
+<section id="architecture" class="section-pad">
+  <div class="wrap">
+    <div class="eyebrow">ARCHITECTURE</div>
+    <h2 class="section-title">Four decisions that make this a gateway, not a toy.</h2>
+    <p class="section-desc">Each one exists because the naive version breaks under real conditions — multi-instance scale, concurrent bursts, or a client that needs to know when to retry.</p>
+
+    <div class="card-grid">
+      <div class="arch-card">
+        <span class="tag">01 · CONCURRENCY</span>
+        <h3>Atomic Lua Scripting</h3>
+        <p>A separate <code>INCR</code> then <code>EXPIRE</code> leaves a window where a crash orphans a key with no TTL — rate-limited forever. <code>incr-and-expire.lua</code> and <code>token-bucket.lua</code> run as one uninterruptible <code>EVAL</code>, so Redis guarantees no request can interleave mid-decision.</p>
+        <div class="snippet">local count = redis.call(<span class="s">"INCR"</span>, KEYS[1])
+<span class="k">if</span> count == 1 <span class="k">then</span>
+  redis.call(<span class="s">"PEXPIRE"</span>, KEYS[1], ARGV[1])
+<span class="k">end</span></div>
+      </div>
+
+      <div class="arch-card">
+        <span class="tag">02 · HTTP SEMANTICS</span>
+        <h3>429, Not 403</h3>
+        <p><code>403</code> says "not allowed, period." <code>429</code> says "allowed, slow down" — and comes with a <code>Retry-After</code> header real clients use to back off automatically. A custom exception + exception filter attaches it, computed live from Redis <code>PTTL</code>.</p>
+        <div class="snippet">HTTP/2 <span class="s">429</span> Too Many Requests
+retry-after: <span class="k">47</span></div>
+      </div>
+
+      <div class="arch-card">
+        <span class="tag">03 · ALGORITHM DESIGN</span>
+        <h3>Fixed Window ↔ Token Bucket</h3>
+        <p>Fixed window resets hard at the boundary — a burst on either side of the reset can nearly double the effective rate. Token bucket refills continuously instead. Both are implemented, atomic, and selectable per-request via <code>x-algorithm</code>.</p>
+        <div class="snippet">-H <span class="s">"x-algorithm: token-bucket"</span></div>
+      </div>
+
+      <div class="arch-card">
+        <span class="tag">04 · OBSERVABILITY</span>
+        <h3>Prometheus + Grafana</h3>
+        <p>Every allow/reject is a labeled counter (<code>apiKey</code>, <code>algorithm</code>), scraped by Prometheus and rendered on a live Grafana dashboard — the same signal a real on-call engineer would page off of.</p>
+        <div class="snippet">rate_limit_rejected_total{
+  algorithm=<span class="s">"token-bucket"</span>
+} <span class="k">1285</span></div>
+      </div>
+    </div>
+
+    <div class="flow">
+      <div class="flow-row">
+        <div class="flow-node">Request</div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-node hot">RatelimiterGuard</div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-node hot">Redis · Lua EVAL</div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-node">Allow / 429</div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-node">Proxy → Backend</div>
+      </div>
+      <div class="flow-caption">the only two nodes that touch shared state are atomic — everything else is stateless and horizontally scalable</div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= BENCHMARKS ================= -->
+<section id="benchmarks" class="section-pad" style="border-top:1px solid var(--border);">
+  <div class="wrap">
+    <div class="eyebrow">LOAD TEST</div>
+    <h2 class="section-title">50 concurrent connections. 10 seconds. Zero leaks.</h2>
+    <p class="section-desc">Benchmarked live against the Railway deployment with <code>autocannon</code>, one API key, <code>RATE_LIMIT_MAX_REQUESTS=5</code>.</p>
+
+    <div class="bench-wrap bench-scroll">
+      <table class="bench">
+        <thead>
+          <tr>
+            <th>Algorithm</th>
+            <th>2xx</th>
+            <th>429</th>
+            <th>Avg req/sec</th>
+            <th>p50 latency</th>
+            <th>p99 latency</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="algo">Fixed Window</td>
+            <td class="ok">5</td>
+            <td class="rej">1,262</td>
+            <td>126.7</td>
+            <td>333 ms</td>
+            <td>2,036 ms</td>
+          </tr>
+          <tr>
+            <td class="algo">Token Bucket</td>
+            <td class="ok">5</td>
+            <td class="rej">1,285</td>
+            <td>129.0</td>
+            <td>332 ms</td>
+            <td>2,048 ms</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="takeaway">
+      <span class="marker">▲</span>
+      <span>Exactly 5 requests admitted, every request after that correctly rejected — for both algorithms, under genuine 50-connection concurrency. This is the practical stress test for the atomic Lua fix: the naive <code>INCR</code>-then-<code>EXPIRE</code> approach has a real race window at exactly this kind of concurrent burst.</span>
+    </div>
+  </div>
+</section>
+
+<!-- ================= TRY IT ================= -->
+<section id="try-it" class="section-pad" style="border-top:1px solid var(--border);">
+  <div class="wrap">
+    <div class="eyebrow">RUN IT YOURSELF</div>
+    <h2 class="section-title">No signup. Just cURL.</h2>
+    <p class="section-desc">These hit the live Railway deployment directly. Copy, paste, and watch the 6th request flip to 429.</p>
+
+    <div style="margin-top:36px;">
+
+      <div class="cmd-block">
+        <div class="cmd-head">
+          <span class="label">Ping the gateway</span>
+          <button class="copy-btn" data-copy-target="cmd1">Copy</button>
+        </div>
+        <div class="cmd-body" id="cmd1">curl -i <span class="flag">-H</span> <span class="str">"x-api-key: try-it-yourself"</span> \
+  <span class="url">https://nestjs-ratelimiter-gateway-production.up.railway.app/gateway/ping</span></div>
+      </div>
+
+      <div class="cmd-block">
+        <div class="cmd-head">
+          <span class="label">Force a 429 — fire past the limit</span>
+          <button class="copy-btn" data-copy-target="cmd2">Copy</button>
+        </div>
+        <div class="cmd-body" id="cmd2">for i in {1..7}; do
+  curl -s -i <span class="flag">-H</span> <span class="str">"x-api-key: try-it-yourself"</span> \
+    <span class="url">https://nestjs-ratelimiter-gateway-production.up.railway.app/gateway/ping</span> | head -1
+done</div>
+      </div>
+
+      <div class="cmd-block">
+        <div class="cmd-head">
+          <span class="label">Switch algorithm to token bucket</span>
+          <button class="copy-btn" data-copy-target="cmd3">Copy</button>
+        </div>
+        <div class="cmd-body" id="cmd3">curl -i <span class="flag">-H</span> <span class="str">"x-api-key: try-it-yourself"</span> \
+  <span class="flag">-H</span> <span class="str">"x-algorithm: token-bucket"</span> \
+  <span class="url">https://nestjs-ratelimiter-gateway-production.up.railway.app/gateway/ping</span></div>
+      </div>
+
+      <div class="cmd-block">
+        <div class="cmd-head">
+          <span class="label">Proxy through to the backend</span>
+          <button class="copy-btn" data-copy-target="cmd4">Copy</button>
+        </div>
+        <div class="cmd-body" id="cmd4">curl <span class="flag">-H</span> <span class="str">"x-api-key: try-it-yourself"</span> \
+  <span class="url">https://nestjs-ratelimiter-gateway-production.up.railway.app/gateway/proxy/hello</span></div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ================= FOOTER ================= -->
+<footer>
+  <div class="wrap">
+    <div class="footer-grid">
+      <div>
+        <h4>RATE//LIMITER</h4>
+        <p style="color:var(--text-muted); font-size:14px; max-width:320px; line-height:1.7;">
+          NestJS · Redis · Lua · Prometheus · Grafana · Docker. Built and load-tested against a live multi-instance-shaped deployment.
+        </p>
+      </div>
+      <div>
+        <h4>Project</h4>
+        <ul>
+          <li><a href="https://github.com/MARCAAAAARRON/nestjs-ratelimiter-gateway" target="_blank" rel="noopener">GitHub Repository</a></li>
+          <li><a href="https://github.com/MARCAAAAARRON/nestjs-ratelimiter-gateway#readme" target="_blank" rel="noopener">Design Doc / README</a></li>
+          <li><a href="https://nestjs-ratelimiter-gateway-production.up.railway.app/metrics" target="_blank" rel="noopener">Live /metrics endpoint</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>Contact</h4>
+        <ul>
+          <li><a href="https://github.com/MARCAAAAARRON" target="_blank" rel="noopener">github.com/MARCAAAAARRON</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <span>© 2026 — built solo, deployed live.</span>
+      <span>status: <span style="color:var(--success)">● operational</span></span>
+    </div>
+  </div>
+</footer>
+
+<script>
+  // Hero terminal cycling
+  const blocks = document.querySelectorAll('.term-block');
+  let idx = 0;
+  setInterval(() => {
+    blocks[idx].classList.remove('active');
+    idx = (idx + 1) % blocks.length;
+    blocks[idx].classList.add('active');
+  }, 3200);
+
+  // Copy buttons (curl tester)
+  document.querySelectorAll('.copy-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const target = document.getElementById(btn.dataset.copyTarget);
+      const text = target.innerText;
+      navigator.clipboard.writeText(text).then(() => {
+        const original = btn.textContent;
+        btn.textContent = 'Copied ✓';
+        btn.classList.add('copied');
+        setTimeout(() => { btn.textContent = original; btn.classList.remove('copied'); }, 1800);
+      });
+    });
+  });
+
+  // Hero CTA copy
+  document.getElementById('heroCurlBtn').addEventListener('click', (e) => {
+    const cmd = 'curl -i -H "x-api-key: demo" https://nestjs-ratelimiter-gateway-production.up.railway.app/gateway/ping';
+    navigator.clipboard.writeText(cmd).then(() => {
+      const btn = e.currentTarget;
+      const original = btn.textContent;
+      btn.textContent = 'Copied ✓';
+      btn.classList.add('copied');
+      setTimeout(() => { btn.textContent = original; btn.classList.remove('copied'); }, 1800);
+    });
+  });
+</script>
+
+</body>
+</html>

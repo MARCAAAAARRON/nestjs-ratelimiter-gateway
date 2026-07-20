@@ -4,7 +4,7 @@
   "sourceRoot": "src",
   "compilerOptions": {
     "deleteOutDir": true,
-    "assets": ["**/*.lua"],
+    "assets": ["**/*.lua", "../public/**"],
     "watchAssets": true
   }
 }
